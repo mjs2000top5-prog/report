@@ -71,7 +71,7 @@ SPREADSHEET_ID = "1k2FcMog8G75apAxUAJsCuHE10hQHSmImFofX1ZTSYwk"
 SHEET_CONFIG = {
     "위멤버스":  {"cols": ["D", "E", "I", "S"],  "col_idx": [3, 4, 8, 18], "icon": "📗"},
     "경리나라T": {"cols": ["D", "E", "I", "V"],  "col_idx": [3, 4, 8, 21], "icon": "📘"},
-    "경리나라":  {"cols": ["D", "E", "I", "W"],  "col_idx": [3, 4, 8, 22], "icon": "📙"},
+    "경리나라":  {"cols": ["D", "E", "P", "W"],  "col_idx": [3, 4, 15, 22], "icon": "📙"},
 }
 
 
