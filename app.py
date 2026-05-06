@@ -247,4 +247,4 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### 📈 보고서 페이지")
-    st.page_link("pages/report.py", label="📊 보고서 보기")
+    st.markdown("← 좌측 사이드바 상단의 **report** 메뉴를 클릭하세요")
