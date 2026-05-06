@@ -39,6 +39,15 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
 .sheet-card h4 { margin: 0 0 0.3rem; color: #1A3A8F; font-size: 1rem; }
 .sheet-card p  { margin: 0; color: #64748b; font-size: 0.82rem; }
 
+.sheet-card-selected {
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    border-left: 4px solid #0066FF;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 0.5rem 0;
+}
+
 .success-box {
     background: #f0fdf4; border: 1px solid #86efac;
     border-radius: 8px; padding: 1rem; margin: 1rem 0;
@@ -60,9 +69,9 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
 SPREADSHEET_ID = "1k2FcMog8G75apAxUAJsCuHE10hQHSmImFofX1ZTSYwk"
 
 SHEET_CONFIG = {
-    "위멤버스":  {"cols": ["D", "E", "I", "S"],  "col_idx": [3, 4, 8, 18]},
-    "경리나라T": {"cols": ["D", "E", "I", "V"],  "col_idx": [3, 4, 8, 21]},
-    "경리나라":  {"cols": ["D", "E", "I", "W"],  "col_idx": [3, 4, 8, 22]},
+    "위멤버스":  {"cols": ["D", "E", "I", "S"],  "col_idx": [3, 4, 8, 18], "icon": "📗"},
+    "경리나라T": {"cols": ["D", "E", "I", "V"],  "col_idx": [3, 4, 8, 21], "icon": "📘"},
+    "경리나라":  {"cols": ["D", "E", "I", "W"],  "col_idx": [3, 4, 8, 22], "icon": "📙"},
 }
 
 
@@ -84,42 +93,48 @@ def get_worksheet(client, sheet_name: str):
 
 
 # ── 데이터 처리 ─────────────────────────────────────────────
-def extract_columns(df: pd.DataFrame, col_indices: list[int]) -> pd.DataFrame:
-    """0-based col index로 열 추출, 헤더 포함"""
+def extract_columns(df: pd.DataFrame, col_indices: list) -> pd.DataFrame:
     valid = [i for i in col_indices if i < len(df.columns)]
     return df.iloc[:, valid]
 
 
-def df_to_sheet_values(df: pd.DataFrame) -> list[list]:
-    """NaN → 빈 문자열, 날짜 → 문자열 변환"""
+def df_to_sheet_values(df: pd.DataFrame) -> list:
+    import numpy as np
     rows = []
     for _, row in df.iterrows():
         processed = []
         for val in row:
-            if pd.isna(val):
-                processed.append("")
-            elif isinstance(val, (pd.Timestamp, datetime)):
+            try:
+                if pd.isna(val):
+                    processed.append("")
+                    continue
+            except (TypeError, ValueError):
+                pass
+            if isinstance(val, (pd.Timestamp, datetime)):
                 processed.append(str(val.date()))
+            elif isinstance(val, (np.integer,)):
+                processed.append(int(val))
+            elif isinstance(val, (np.floating,)):
+                processed.append(float(val))
+            elif isinstance(val, float):
+                processed.append(val)
+            elif isinstance(val, int):
+                processed.append(val)
             else:
-                processed.append(str(val) if not isinstance(val, (int, float)) else val)
+                processed.append(str(val))
         rows.append(processed)
     return rows
 
 
-def upload_to_sheet(client, sheet_name: str, df: pd.DataFrame, col_indices: list[int]):
+def upload_to_sheet(client, sheet_name: str, df: pd.DataFrame, col_indices: list):
     ws = get_worksheet(client, sheet_name)
     extracted = extract_columns(df, col_indices)
-
-    # 헤더 행 가져오기 (1번 행)
     header_row = extracted.iloc[0].tolist() if len(extracted) > 0 else []
-    data_rows  = df_to_sheet_values(extracted.iloc[1:])  # 헤더 제외 데이터
-
-    # 기존 내용 지우고 다시 쓰기
+    data_rows  = df_to_sheet_values(extracted.iloc[1:])
     ws.clear()
     all_values = [header_row] + data_rows if header_row else data_rows
     if all_values:
         ws.update("A1", all_values, value_input_option="USER_ENTERED")
-
     return len(data_rows)
 
 
@@ -127,37 +142,38 @@ def upload_to_sheet(client, sheet_name: str, df: pd.DataFrame, col_indices: list
 st.markdown('<div class="main-title">📊 실적 데이터 업로드</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">엑셀 파일을 업로드하면 Google Sheets에 자동 반영됩니다</div>', unsafe_allow_html=True)
 
-# 시트별 업로드 열 안내
+# ── 시트 선택 ──────────────────────────────────────────────
+st.subheader("① 업로드할 시트 선택")
+st.caption("여러 시트를 동시에 선택할 수 있습니다.")
+
 col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("""
-    <div class="sheet-card">
-      <h4>📗 위멤버스</h4>
-      <p>업로드 열: D, E, I, S</p>
-    </div>
-    """, unsafe_allow_html=True)
-with col2:
-    st.markdown("""
-    <div class="sheet-card">
-      <h4>📘 경리나라T</h4>
-      <p>업로드 열: D, E, I, V</p>
-    </div>
-    """, unsafe_allow_html=True)
-with col3:
-    st.markdown("""
-    <div class="sheet-card">
-      <h4>📙 경리나라</h4>
-      <p>업로드 열: D, E, I, W</p>
-    </div>
-    """, unsafe_allow_html=True)
+sheet_checks = {}
+for col_widget, (sheet_name, cfg) in zip([col1, col2, col3], SHEET_CONFIG.items()):
+    with col_widget:
+        checked = st.checkbox(
+            f"{cfg['icon']} **{sheet_name}**",
+            value=True,
+            key=f"check_{sheet_name}",
+        )
+        sheet_checks[sheet_name] = checked
+        st.markdown(
+            f"<div class='sheet-card'><p>업로드 열: {', '.join(cfg['cols'])}</p></div>",
+            unsafe_allow_html=True,
+        )
+
+selected_sheets = [name for name, checked in sheet_checks.items() if checked]
+
+if not selected_sheets:
+    st.warning("⚠️ 업로드할 시트를 1개 이상 선택해주세요.")
 
 st.divider()
 
-# 파일 업로드
+# ── 파일 업로드 ────────────────────────────────────────────
+st.subheader("② 엑셀 파일 업로드")
 uploaded_file = st.file_uploader(
     "엑셀 파일 선택 (.xlsx / .xls)",
     type=["xlsx", "xls"],
-    help="다운로드 받은 실적 엑셀 파일을 여기에 드래그하거나 클릭하여 업로드하세요.",
+    help="다운로드 받은 실적 엑셀 파일을 드래그하거나 클릭하여 업로드하세요.",
 )
 
 if uploaded_file:
@@ -168,26 +184,32 @@ if uploaded_file:
         with st.expander("📋 원본 데이터 미리보기 (상위 5행)"):
             st.dataframe(df_raw.head(), use_container_width=True)
 
-        # 각 시트별 미리보기
-        st.subheader("시트별 업로드 데이터 미리보기")
-        tabs = st.tabs(["📗 위멤버스", "📘 경리나라T", "📙 경리나라"])
-        for tab, (sheet_name, cfg) in zip(tabs, SHEET_CONFIG.items()):
-            with tab:
-                preview = extract_columns(df_raw, cfg["col_idx"])
-                st.caption(f"열 {', '.join(cfg['cols'])} — {len(preview)-1:,}건")
-                st.dataframe(preview.head(10), use_container_width=True)
+        # 선택된 시트만 미리보기
+        if selected_sheets:
+            st.subheader("선택된 시트 데이터 미리보기")
+            tab_labels = [f"{SHEET_CONFIG[s]['icon']} {s}" for s in selected_sheets]
+            tabs = st.tabs(tab_labels)
+            for tab, sheet_name in zip(tabs, selected_sheets):
+                with tab:
+                    cfg = SHEET_CONFIG[sheet_name]
+                    preview = extract_columns(df_raw, cfg["col_idx"])
+                    st.caption(f"열 {', '.join(cfg['cols'])} — {max(0, len(preview)-1):,}건")
+                    st.dataframe(preview.head(10), use_container_width=True)
 
         st.divider()
 
-        # 업로드 버튼
-        if st.button("🚀 Google Sheets에 업로드", use_container_width=True):
+        # ── 업로드 버튼 ────────────────────────────────────
+        btn_label = f"🚀 선택된 시트 업로드 ({', '.join(selected_sheets)})" if selected_sheets else "🚀 업로드"
+        if selected_sheets and st.button(btn_label, use_container_width=True):
             try:
                 client = get_gspread_client()
                 results = {}
+                total = len(selected_sheets)
                 progress = st.progress(0, text="업로드 중...")
 
-                for i, (sheet_name, cfg) in enumerate(SHEET_CONFIG.items()):
-                    progress.progress((i) / 3, text=f"📤 {sheet_name} 시트 업로드 중...")
+                for i, sheet_name in enumerate(selected_sheets):
+                    progress.progress(i / total, text=f"📤 {sheet_name} 시트 업로드 중...")
+                    cfg = SHEET_CONFIG[sheet_name]
                     count = upload_to_sheet(client, sheet_name, df_raw, cfg["col_idx"])
                     results[sheet_name] = count
 
@@ -196,7 +218,7 @@ if uploaded_file:
                 st.markdown('<div class="success-box">', unsafe_allow_html=True)
                 st.markdown("### ✅ 업로드 완료!")
                 for sheet_name, count in results.items():
-                    st.markdown(f"- **{sheet_name}**: {count:,}건")
+                    st.markdown(f"- **{SHEET_CONFIG[sheet_name]['icon']} {sheet_name}**: {count:,}건")
                 st.markdown(
                     f"[📊 Google Sheets에서 확인하기](https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit)",
                     unsafe_allow_html=True
