@@ -186,14 +186,12 @@ def save_target(year: int, month: int, val: int):
 # 헤더
 # ══════════════════════════════════════════════════════════
 st.markdown('<div class="main-title">📊 위멤버스 실적 관리</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">데이터 업로드 · 주간/월별/분기별 보고서 · 목표 관리</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">데이터 업로드 · 월별 보고서 · 목표 관리</div>', unsafe_allow_html=True)
 
 # 메인 탭
-TAB_UPLOAD, TAB_WEEKLY, TAB_MONTHLY, TAB_QUARTERLY, TAB_TARGET = st.tabs([
+TAB_UPLOAD, TAB_MONTHLY, TAB_TARGET = st.tabs([
     "📤 데이터 업로드",
-    "📆 주간 실적",
     "📅 월별 실적",
-    "📊 분기별 실적",
     "🎯 목표 관리",
 ])
 
@@ -295,89 +293,6 @@ def load_report_data():
 # ══════════════════════════════════════════════════════════
 # 탭 2 — 주간 실적
 # ══════════════════════════════════════════════════════════
-with TAB_WEEKLY:
-    df_wm, available_years = load_report_data()
-    if df_wm is not None:
-        col_yr, _ = st.columns([2, 8])
-        with col_yr:
-            sel_year = st.selectbox("연도", available_years, key="yr_weekly")
-
-        today    = date.today()
-        thu, wed = get_week_range(today)
-        df_year  = df_wm[df_wm["연도"] == sel_year]
-
-        st.markdown(
-            f'<div class="week-badge">📌 현재 보고 기준 주간: '
-            f'{thu.strftime("%Y.%m.%d")} (목) ~ {wed.strftime("%Y.%m.%d")} (수)</div>',
-            unsafe_allow_html=True,
-        )
-
-        last_thu = thu - timedelta(weeks=1)
-        last_wed = wed - timedelta(weeks=1)
-        df_this  = df_year[(df_year["가입일"] >= thu)      & (df_year["가입일"] <= wed)]
-        df_last  = df_year[(df_year["가입일"] >= last_thu) & (df_year["가입일"] <= last_wed)]
-        diff     = len(df_this) - len(df_last)
-        diff_cls = "kpi-good" if diff >= 0 else "kpi-bad"
-        diff_str = f"+{diff}" if diff >= 0 else str(diff)
-
-        k1, k2, k3 = st.columns(3)
-        with k1:
-            st.markdown(f"""<div class="kpi-card">
-              <div class="kpi-label">이번 주 신규</div>
-              <div class="kpi-value">{len(df_this)}건</div>
-              <div class="kpi-sub">{thu.strftime('%m.%d')} ~ {wed.strftime('%m.%d')}</div>
-            </div>""", unsafe_allow_html=True)
-        with k2:
-            st.markdown(f"""<div class="kpi-card">
-              <div class="kpi-label">지난 주 신규</div>
-              <div class="kpi-value">{len(df_last)}건</div>
-              <div class="kpi-sub">{last_thu.strftime('%m.%d')} ~ {last_wed.strftime('%m.%d')}</div>
-            </div>""", unsafe_allow_html=True)
-        with k3:
-            st.markdown(f"""<div class="kpi-card">
-              <div class="kpi-label">전주 대비</div>
-              <div class="kpi-value"><span class="{diff_cls}">{diff_str}건</span></div>
-            </div>""", unsafe_allow_html=True)
-
-        st.markdown("")
-
-        if not df_this.empty:
-            st.subheader("이번 주 상품별 현황")
-            prod_cnt = df_this.groupby("상품명").size().reset_index(name="건수")
-            fig = px.bar(prod_cnt, x="상품명", y="건수",
-                         color="상품명", color_discrete_sequence=["#0066FF","#1A3A8F"],
-                         height=280, text="건수")
-            fig.update_traces(textposition="outside")
-            fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                              font_family="Noto Sans KR", showlegend=False,
-                              margin=dict(t=10,b=10))
-            st.plotly_chart(fig, use_container_width=True)
-            with st.expander("📋 이번 주 신규 고객 목록"):
-                st.dataframe(df_this[["상호명","상품명","가입일"]].reset_index(drop=True),
-                             use_container_width=True)
-        else:
-            st.info("이번 주 신규 데이터가 없습니다.")
-
-        st.subheader("최근 8주 트렌드")
-        week_data = []
-        for i in range(7, -1, -1):
-            w_thu = thu - timedelta(weeks=i)
-            w_wed = wed - timedelta(weeks=i)
-            cnt   = len(df_year[(df_year["가입일"] >= w_thu) & (df_year["가입일"] <= w_wed)])
-            week_data.append({"주간": f"{w_thu.strftime('%m.%d')}~{w_wed.strftime('%m.%d')}", "건수": cnt})
-        df_weeks = pd.DataFrame(week_data)
-        fig2 = px.line(df_weeks, x="주간", y="건수", markers=True,
-                       color_discrete_sequence=["#0066FF"], height=280)
-        fig2.update_traces(line_width=2.5, marker_size=8)
-        fig2.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                           font_family="Noto Sans KR", margin=dict(t=10,b=10))
-        st.plotly_chart(fig2, use_container_width=True)
-
-
-# ══════════════════════════════════════════════════════════
-# 탭 3 — 월별 실적  (이미지 형태: 연간성과 + 월별상세 + 분기별 테이블)
-# ══════════════════════════════════════════════════════════
-with TAB_MONTHLY:
     df_wm, available_years = load_report_data()
     if df_wm is not None:
         col_yr, _ = st.columns([2, 8])
@@ -514,52 +429,6 @@ with TAB_MONTHLY:
 
 # ══════════════════════════════════════════════════════════
 # 탭 4 — 분기별 실적
-# ══════════════════════════════════════════════════════════
-with TAB_QUARTERLY:
-    df_wm, available_years = load_report_data()
-    if df_wm is not None:
-        sel_year  = st.selectbox("연도", available_years, key="yr_quarterly")
-        df_year   = df_wm[df_wm["연도"] == sel_year]
-        q_order   = ["1분기","2분기","3분기","4분기"]
-
-        quarterly = df_year.groupby("분기").size().reset_index(name="신규건수")
-        quarterly["분기"] = pd.Categorical(quarterly["분기"], categories=q_order, ordered=True)
-        quarterly = quarterly.sort_values("분기")
-
-        st.subheader(f"{sel_year}년 분기별 신규 현황")
-        q_cols = st.columns(4)
-        for cw, q in zip(q_cols, q_order):
-            row = quarterly[quarterly["분기"] == q]
-            cnt = int(row["신규건수"].values[0]) if not row.empty else 0
-            with cw:
-                st.markdown(f"""<div class="kpi-card">
-                  <div class="kpi-label">{q}</div>
-                  <div class="kpi-value">{cnt}건</div>
-                </div>""", unsafe_allow_html=True)
-
-        st.markdown("")
-        fig = px.bar(quarterly, x="분기", y="신규건수",
-                     color_discrete_sequence=["#1A3A8F"], height=300, text="신규건수")
-        fig.update_traces(textposition="outside")
-        fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                          font_family="Noto Sans KR", showlegend=False,
-                          margin=dict(t=10,b=10))
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("분기 × 상품별 현황")
-        pivot = df_year.pivot_table(index="상품명", columns="분기",
-                                     values="사업자번호", aggfunc="count", fill_value=0)
-        pivot = pivot.reindex(columns=[q for q in q_order if q in pivot.columns])
-        fig2  = px.imshow(pivot, text_auto=True,
-                          color_continuous_scale=[[0,"#eff6ff"],[1,"#0066FF"]],
-                          height=220, aspect="auto")
-        fig2.update_layout(font_family="Noto Sans KR", coloraxis_showscale=False,
-                           margin=dict(t=10,b=10))
-        st.plotly_chart(fig2, use_container_width=True)
-
-
-# ══════════════════════════════════════════════════════════
-# 탭 5 — 목표 관리
 # ══════════════════════════════════════════════════════════
 with TAB_TARGET:
     df_wm, available_years = load_report_data()
