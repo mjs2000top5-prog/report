@@ -298,13 +298,13 @@ def load_report_data():
 with TAB_WEEKLY:
     df_wm, available_years = load_report_data()
     if df_wm is not None:
-        col_yr, col_ref = st.columns([2, 8])
+        col_yr, _ = st.columns([2, 8])
         with col_yr:
             sel_year = st.selectbox("연도", available_years, key="yr_weekly")
 
-        today     = date.today()
-        thu, wed  = get_week_range(today)
-        df_year   = df_wm[df_wm["연도"] == sel_year]
+        today    = date.today()
+        thu, wed = get_week_range(today)
+        df_year  = df_wm[df_wm["연도"] == sel_year]
 
         st.markdown(
             f'<div class="week-badge">📌 현재 보고 기준 주간: '
@@ -312,13 +312,13 @@ with TAB_WEEKLY:
             unsafe_allow_html=True,
         )
 
-        last_thu  = thu - timedelta(weeks=1)
-        last_wed  = wed - timedelta(weeks=1)
-        df_this   = df_year[(df_year["가입일"] >= thu)      & (df_year["가입일"] <= wed)]
-        df_last   = df_year[(df_year["가입일"] >= last_thu) & (df_year["가입일"] <= last_wed)]
-        diff      = len(df_this) - len(df_last)
-        diff_cls  = "kpi-good" if diff >= 0 else "kpi-bad"
-        diff_str  = f"+{diff}" if diff >= 0 else str(diff)
+        last_thu = thu - timedelta(weeks=1)
+        last_wed = wed - timedelta(weeks=1)
+        df_this  = df_year[(df_year["가입일"] >= thu)      & (df_year["가입일"] <= wed)]
+        df_last  = df_year[(df_year["가입일"] >= last_thu) & (df_year["가입일"] <= last_wed)]
+        diff     = len(df_this) - len(df_last)
+        diff_cls = "kpi-good" if diff >= 0 else "kpi-bad"
+        diff_str = f"+{diff}" if diff >= 0 else str(diff)
 
         k1, k2, k3 = st.columns(3)
         with k1:
@@ -352,7 +352,6 @@ with TAB_WEEKLY:
                               font_family="Noto Sans KR", showlegend=False,
                               margin=dict(t=10,b=10))
             st.plotly_chart(fig, use_container_width=True)
-
             with st.expander("📋 이번 주 신규 고객 목록"):
                 st.dataframe(df_this[["상호명","상품명","가입일"]].reset_index(drop=True),
                              use_container_width=True)
@@ -376,98 +375,141 @@ with TAB_WEEKLY:
 
 
 # ══════════════════════════════════════════════════════════
-# 탭 3 — 월별 실적
+# 탭 3 — 월별 실적  (이미지 형태: 연간성과 + 월별상세 + 분기별 테이블)
 # ══════════════════════════════════════════════════════════
 with TAB_MONTHLY:
     df_wm, available_years = load_report_data()
     if df_wm is not None:
-        c_yr, c_mo = st.columns([2, 2])
-        with c_yr:
-            sel_year  = st.selectbox("연도", available_years, key="yr_monthly")
-        with c_mo:
-            sel_month = st.selectbox("월 (주차 상세)", list(MONTH_NAMES.keys()),
-                                     index=min(date.today().month-1, 11),
-                                     format_func=lambda m: MONTH_NAMES[m], key="mo_monthly")
+        col_yr, _ = st.columns([2, 8])
+        with col_yr:
+            sel_year = st.selectbox("연도", available_years, key="yr_monthly")
 
-        df_year  = df_wm[df_wm["연도"] == sel_year]
-        df_month = df_year[df_year["월"] == sel_month].copy()
-        target   = get_target(sel_year, sel_month)
-        total    = len(df_month)
-        rate     = round(total/target*100, 1) if target > 0 else None
+        df_year = df_wm[df_wm["연도"] == sel_year]
 
-        k1, k2, k3 = st.columns(3)
-        with k1:
+        # ── 연간 목표 입력 (사이드 인라인) ──────────────────
+        annual_target = sum(get_target(sel_year, m) for m in range(1, 13))
+        total_actual  = len(df_year)
+        annual_rate   = round(total_actual / annual_target * 100, 1) if annual_target > 0 else 0
+
+        # ── 🏆 위멤버스 연간 성과 ────────────────────────────
+        st.markdown("### 🏆 위멤버스 연간 성과")
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            rate_cls = "kpi-good" if annual_rate >= 100 else ("kpi-bad" if annual_rate < 50 else "")
             st.markdown(f"""<div class="kpi-card">
-              <div class="kpi-label">{MONTH_NAMES[sel_month]} 신규</div>
-              <div class="kpi-value">{total}건</div>
+              <div class="kpi-label">누적 달성률</div>
+              <div class="kpi-value"><span class="{rate_cls}">{annual_rate}%</span></div>
             </div>""", unsafe_allow_html=True)
-        with k2:
+        with a2:
             st.markdown(f"""<div class="kpi-card">
-              <div class="kpi-label">월 목표</div>
-              <div class="kpi-value">{"미설정" if target==0 else f"{target}건"}</div>
+              <div class="kpi-label">누적 실적</div>
+              <div class="kpi-value">{total_actual}건</div>
             </div>""", unsafe_allow_html=True)
-        with k3:
-            if rate is not None:
-                cls  = "kpi-good" if rate >= 100 else ("kpi-bad" if rate < 70 else "")
-                rval = f'<span class="{cls}">{rate}%</span>'
-            else:
-                rval = '<span style="color:#94a3b8">-</span>'
+        with a3:
             st.markdown(f"""<div class="kpi-card">
-              <div class="kpi-label">달성률</div>
-              <div class="kpi-value">{rval}</div>
+              <div class="kpi-label">연간 목표</div>
+              <div class="kpi-value">{"미설정" if annual_target == 0 else f"{annual_target}건"}</div>
             </div>""", unsafe_allow_html=True)
-
-        st.markdown("")
-
-        # 주차별
-        if not df_month.empty:
-            df_month["주차"] = df_month["가입일"].apply(
-                lambda d: assign_week(d, sel_year, sel_month)
-            )
-            week_cnt = df_month.groupby("주차").size().reset_index(name="건수")
-            w_order  = [f"{i}주차" for i in range(1,7)] + ["기타"]
-            week_cnt["주차"] = pd.Categorical(week_cnt["주차"], categories=w_order, ordered=True)
-            week_cnt = week_cnt.sort_values("주차")
-            st.subheader(f"{MONTH_NAMES[sel_month]} 주차별 현황")
-            fig = px.bar(week_cnt, x="주차", y="건수",
-                         color_discrete_sequence=["#0066FF"], height=260, text="건수")
-            fig.update_traces(textposition="outside")
-            fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                              font_family="Noto Sans KR", showlegend=False,
-                              margin=dict(t=10,b=10))
-            st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
 
-        # 연간 월별 추이
-        st.subheader(f"{sel_year}년 월별 신규 현황")
+        # ── 📅 월별 상세 실적 테이블 ─────────────────────────
+        st.markdown("### 📅 월별 상세 실적 (최신월 증감 포함)")
+
+        # 상품별 월별 피벗
+        std_monthly  = df_year[df_year["상품명"] == "위멤버스 스탠다드"].groupby("월").size()
+        prem_monthly = df_year[df_year["상품명"] == "위멤버스 프리미엄"].groupby("월").size()
+
+        # 현재까지 실적 있는 월만
+        active_months = sorted(df_year["월"].unique())
+
+        rows_monthly = []
+        prev_std, prev_prem = None, None
+        for m in active_months:
+            std_cnt  = int(std_monthly.get(m, 0))
+            prem_cnt = int(prem_monthly.get(m, 0))
+            total_m  = std_cnt + prem_cnt
+            target_m = get_target(sel_year, m)
+            rate_m   = round(total_m / target_m * 100, 1) if target_m > 0 else None
+
+            # 증감 표시 (최신월에만)
+            is_latest = (m == max(active_months))
+            if is_latest and prev_std is not None:
+                std_diff  = std_cnt  - prev_std
+                prem_diff = prem_cnt - prev_prem
+                std_label  = f"{std_cnt}(▲{std_diff})"  if std_diff > 0 else \
+                             (f"{std_cnt}(▼{abs(std_diff)})" if std_diff < 0 else str(std_cnt))
+                prem_label = f"{prem_cnt}(▲{prem_diff})" if prem_diff > 0 else \
+                             (f"{prem_cnt}(▼{abs(prem_diff)})" if prem_diff < 0 else str(prem_cnt))
+            else:
+                std_label  = str(std_cnt)
+                prem_label = str(prem_cnt)
+
+            rows_monthly.append({
+                "월":             m,
+                "위멤버스 스탠다드": std_label,
+                "위멤버스 프리미엄": prem_label,
+                "실적합계":        total_m,
+                "목표":           target_m if target_m > 0 else "-",
+                "달성률":         f"{rate_m}%" if rate_m is not None else "-",
+            })
+            prev_std, prev_prem = std_cnt, prem_cnt
+
+        df_monthly_table = pd.DataFrame(rows_monthly)
+        st.dataframe(df_monthly_table, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── 📊 분기별 실적 테이블 ────────────────────────────
+        st.markdown("### 📊 분기별 실적")
+
+        q_order = ["1분기","2분기","3분기","4분기"]
+        rows_q  = []
+        for qi, q in enumerate(q_order, 1):
+            months_in_q = [m for m in range(1,13) if QUARTERS[m] == q]
+            df_q      = df_year[df_year["월"].isin(months_in_q)]
+            std_q     = int((df_q["상품명"] == "위멤버스 스탠다드").sum())
+            prem_q    = int((df_q["상품명"] == "위멤버스 프리미엄").sum())
+            total_q   = std_q + prem_q
+            target_q  = sum(get_target(sel_year, m) for m in months_in_q)
+            rate_q    = round(total_q / target_q * 100, 1) if target_q > 0 else None
+            rows_q.append({
+                "분기":           qi,
+                "위멤버스 스탠다드": std_q,
+                "위멤버스 프리미엄": prem_q,
+                "목표":           target_q if target_q > 0 else "-",
+                "실적합계":        total_q,
+                "달성률":         f"{rate_q}%" if rate_q is not None else "-",
+            })
+
+        df_q_table = pd.DataFrame(rows_q)
+        st.dataframe(df_q_table, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── 월별 바 차트 + 목표선 ───────────────────────────
+        st.markdown("### 📈 월별 신규 추이")
         base = pd.DataFrame({"월": range(1,13)})
-        base["월명"]   = base["월"].map(MONTH_NAMES)
-        base["목표"]   = base["월"].apply(lambda m: get_target(sel_year, m))
-        base = base.merge(df_year.groupby("월").size().reset_index(name="신규건수"), on="월", how="left").fillna(0)
+        base["월명"] = base["월"].map(MONTH_NAMES)
+        base["목표"] = base["월"].apply(lambda m: get_target(sel_year, m))
+        base = base.merge(df_year.groupby("월").size().reset_index(name="신규건수"),
+                          on="월", how="left").fillna(0)
         base["신규건수"] = base["신규건수"].astype(int)
 
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(x=base["월명"], y=base["신규건수"],
-                              name="신규건수", marker_color="#0066FF",
-                              text=base["신규건수"], textposition="outside"))
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=base["월명"], y=base["신규건수"],
+                             name="신규건수", marker_color="#0066FF",
+                             text=base["신규건수"], textposition="outside"))
         if base["목표"].sum() > 0:
-            fig2.add_trace(go.Scatter(x=base["월명"], y=base["목표"],
-                                      name="목표", mode="lines+markers",
-                                      line=dict(color="#f97316", width=2, dash="dash"),
-                                      marker=dict(size=7)))
-        fig2.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                           font_family="Noto Sans KR", height=320,
-                           legend=dict(orientation="h", y=1.1),
-                           margin=dict(t=30,b=10))
-        st.plotly_chart(fig2, use_container_width=True)
-
-        with st.expander("📋 월별 상세 테이블"):
-            show = base[["월명","신규건수","목표"]].copy()
-            show["달성률"] = show.apply(
-                lambda r: f"{round(r['신규건수']/r['목표']*100,1)}%" if r["목표"]>0 else "-", axis=1
-            )
-            st.dataframe(show.rename(columns={"월명":"월"}), use_container_width=True, hide_index=True)
+            fig.add_trace(go.Scatter(x=base["월명"], y=base["목표"],
+                                     name="목표", mode="lines+markers",
+                                     line=dict(color="#f97316", width=2, dash="dash"),
+                                     marker=dict(size=7)))
+        fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                          font_family="Noto Sans KR", height=320,
+                          legend=dict(orientation="h", y=1.08),
+                          margin=dict(t=30,b=10))
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════
@@ -476,10 +518,10 @@ with TAB_MONTHLY:
 with TAB_QUARTERLY:
     df_wm, available_years = load_report_data()
     if df_wm is not None:
-        sel_year = st.selectbox("연도", available_years, key="yr_quarterly")
-        df_year  = df_wm[df_wm["연도"] == sel_year]
+        sel_year  = st.selectbox("연도", available_years, key="yr_quarterly")
+        df_year   = df_wm[df_wm["연도"] == sel_year]
+        q_order   = ["1분기","2분기","3분기","4분기"]
 
-        q_order  = ["1분기","2분기","3분기","4분기"]
         quarterly = df_year.groupby("분기").size().reset_index(name="신규건수")
         quarterly["분기"] = pd.Categorical(quarterly["분기"], categories=q_order, ordered=True)
         quarterly = quarterly.sort_values("분기")
@@ -496,7 +538,6 @@ with TAB_QUARTERLY:
                 </div>""", unsafe_allow_html=True)
 
         st.markdown("")
-
         fig = px.bar(quarterly, x="분기", y="신규건수",
                      color_discrete_sequence=["#1A3A8F"], height=300, text="신규건수")
         fig.update_traces(textposition="outside")
@@ -552,9 +593,9 @@ with TAB_TARGET:
             t = get_target(sel_year, m)
             a = len(df_year[df_year["월"] == m])
             rows.append({
-                "월": MONTH_NAMES[m],
-                "목표": t if t > 0 else "-",
-                "실적": a,
+                "월":    MONTH_NAMES[m],
+                "목표":  t if t > 0 else "-",
+                "실적":  a,
                 "달성률": f"{round(a/t*100,1)}%" if t > 0 else "-",
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
