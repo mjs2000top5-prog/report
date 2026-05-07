@@ -39,10 +39,9 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
     border-radius: 8px; padding: 1rem; margin: 1rem 0; color: #166534;
 }
 
-/* 연간 성과 섹션 */
 .section-title {
-    font-size: 1.2rem; font-weight: 700; color: #1e293b;
-    margin: 1.2rem 0 0.8rem; display: flex; align-items: center; gap: 0.4rem;
+    font-size: 1.15rem; font-weight: 700; color: #1e293b;
+    margin: 1.4rem 0 0.8rem;
 }
 .annual-kpi {
     background: white; border: 1px solid #e2e8f0;
@@ -54,8 +53,7 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
 .text-bad  { color: #dc2626 !important; }
 .text-warn { color: #d97706 !important; }
 
-/* 테이블 스타일 */
-.report-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-bottom: 0.5rem; }
 .report-table th {
     background: #f1f5f9; color: #475569; font-weight: 600;
     padding: 0.6rem 0.8rem; text-align: right; border-bottom: 2px solid #e2e8f0;
@@ -78,6 +76,7 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
     color: #1e40af; font-size: 0.84rem; font-weight: 500;
     margin-bottom: 0.8rem;
 }
+.divider-soft { border: none; border-top: 1px solid #e2e8f0; margin: 1.5rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,6 +94,10 @@ SHEET_CONFIG = {
 WM_PRODUCTS = ["위멤버스 스탠다드", "위멤버스 프리미엄"]
 QUARTERS    = {m: f"{(m-1)//3+1}분기" for m in range(1, 13)}
 MONTH_NAMES = {m: f"{m}월" for m in range(1, 13)}
+CURRENT_YEAR = date.today().year
+# 목표 관리용 연도: 2026부터 현재+3년까지
+TARGET_YEARS = list(range(2026, CURRENT_YEAR + 4))
+
 
 # ══════════════════════════════════════════════════════════
 # Google Sheets 연결
@@ -182,19 +185,6 @@ def get_week_range(ref: date):
     return thu, thu + timedelta(days=6)
 
 
-def assign_week(d: date, year: int, month: int) -> str:
-    first = date(year, month, 1)
-    shift = (3 - first.weekday()) % 7
-    first_thu = first + timedelta(days=shift)
-    if first_thu.month != month:
-        first_thu += timedelta(weeks=1)
-    for w in range(1, 7):
-        thu = first_thu + timedelta(weeks=w - 1)
-        if thu <= d <= thu + timedelta(days=6):
-            return f"{w}주차"
-    return "기타"
-
-
 def get_target(year: int, month: int) -> int:
     return st.session_state.get("monthly_targets", {}).get(f"{year}_{month}", 0)
 
@@ -225,16 +215,21 @@ def rate_color(rate):
     return "text-warn"
 
 
+def make_badge(v, d):
+    if d > 0: return f'{v} <span class="badge-up">(▲{d})</span>'
+    if d < 0: return f'{v} <span class="badge-down">(▼{abs(d)})</span>'
+    return str(v)
+
+
 # ══════════════════════════════════════════════════════════
 # 헤더
 # ══════════════════════════════════════════════════════════
 st.markdown('<div class="main-title">📊 위멤버스 실적 관리</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">데이터 업로드 · 월별/분기별 보고서 · 목표 관리</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">데이터 업로드 · 실적 보고서 · 목표 관리</div>', unsafe_allow_html=True)
 
-TAB_UPLOAD, TAB_REPORT, TAB_WEEKLY, TAB_TARGET = st.tabs([
+TAB_UPLOAD, TAB_REPORT, TAB_TARGET = st.tabs([
     "📤 데이터 업로드",
     "📋 실적 보고서",
-    "📆 주간 실적",
     "🎯 목표 관리",
 ])
 
@@ -315,21 +310,29 @@ with TAB_UPLOAD:
 
 
 # ══════════════════════════════════════════════════════════
-# 탭 2 — 실적 보고서 (이미지 레이아웃)
+# 탭 2 — 실적 보고서 (연간성과 + 월별 + 분기별 + 주간)
 # ══════════════════════════════════════════════════════════
 with TAB_REPORT:
     df_wm, available_years = load_report_data()
     if df_wm is not None:
-        c_yr, _ = st.columns([2, 8])
-        with c_yr:
-            sel_year = st.selectbox("연도", available_years, key="yr_report")
 
-        df_year      = df_wm[df_wm["연도"] == sel_year]
+        col_yr, col_refresh, _ = st.columns([2, 1, 7])
+        with col_yr:
+            sel_year = st.selectbox("연도", available_years, key="yr_report")
+        with col_refresh:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if st.button("🔄", help="데이터 새로고침"):
+                st.cache_data.clear()
+                st.rerun()
+
+        df_year       = df_wm[df_wm["연도"] == sel_year]
         annual_target = sum(get_target(sel_year, m) for m in range(1, 13))
         total_actual  = len(df_year)
         annual_rate   = round(total_actual / annual_target * 100, 1) if annual_target > 0 else 0
 
-        # ── 🏆 연간 성과 ────────────────────────────────────
+        # ────────────────────────────────────────────────
+        # 🏆 연간 성과
+        # ────────────────────────────────────────────────
         st.markdown('<div class="section-title">🏆 위멤버스 연간 성과</div>', unsafe_allow_html=True)
         a1, a2, a3 = st.columns(3)
         rate_cls = rate_color(annual_rate)
@@ -349,27 +352,21 @@ with TAB_REPORT:
               <div class="value">{"미설정" if annual_target == 0 else f"{annual_target}건"}</div>
             </div>""", unsafe_allow_html=True)
 
-        st.divider()
+        st.markdown('<hr class="divider-soft">', unsafe_allow_html=True)
 
-        # ── 📅 월별 상세 실적 테이블 ─────────────────────────
+        # ────────────────────────────────────────────────
+        # 📅 월별 상세 실적
+        # ────────────────────────────────────────────────
         st.markdown('<div class="section-title">📅 월별 상세 실적 (최신월 증감 포함)</div>', unsafe_allow_html=True)
 
-        std_monthly  = df_year[df_year["상품명"] == "위멤버스 스탠다드"].groupby("월").size()
-        prem_monthly = df_year[df_year["상품명"] == "위멤버스 프리미엄"].groupby("월").size()
+        std_monthly   = df_year[df_year["상품명"] == "위멤버스 스탠다드"].groupby("월").size()
+        prem_monthly  = df_year[df_year["상품명"] == "위멤버스 프리미엄"].groupby("월").size()
         active_months = sorted(df_year["월"].unique())
 
-        # HTML 테이블 생성
-        thead = """
-        <table class="report-table">
-        <thead><tr>
-          <th>월</th>
-          <th>위멤버스 스탠다드</th>
-          <th>위멤버스 프리미엄</th>
-          <th>실적합계</th>
-          <th>목표</th>
-          <th>달성률</th>
-        </tr></thead><tbody>
-        """
+        thead = """<table class="report-table"><thead><tr>
+          <th>월</th><th>위멤버스 스탠다드</th><th>위멤버스 프리미엄</th>
+          <th>실적합계</th><th>목표</th><th>달성률</th>
+        </tr></thead><tbody>"""
         tbody = ""
         prev_std, prev_prem = None, None
         for m in active_months:
@@ -380,82 +377,123 @@ with TAB_REPORT:
             rate_m   = round(total_m / target_m * 100, 1) if target_m > 0 else None
             is_latest = (m == max(active_months))
 
-            # 최신월 증감 뱃지
             if is_latest and prev_std is not None:
-                d_std  = std_cnt  - prev_std
-                d_prem = prem_cnt - prev_prem
-                def badge(v, d):
-                    if d > 0: return f'{v} <span class="badge-up">(▲{d})</span>'
-                    if d < 0: return f'{v} <span class="badge-down">(▼{abs(d)})</span>'
-                    return str(v)
-                std_cell  = badge(std_cnt, d_std)
-                prem_cell = badge(prem_cnt, d_prem)
+                std_cell  = make_badge(std_cnt,  std_cnt  - prev_std)
+                prem_cell = make_badge(prem_cnt, prem_cnt - prev_prem)
             else:
-                std_cell  = str(std_cnt)
-                prem_cell = str(prem_cnt)
-
-            rate_str = f"{rate_m}%" if rate_m is not None else "-"
-            rate_td_cls = rate_color(rate_m)
-            target_str  = str(target_m) if target_m > 0 else "-"
+                std_cell, prem_cell = str(std_cnt), str(prem_cnt)
 
             tbody += f"""<tr>
-              <td>{m}</td>
-              <td>{std_cell}</td>
-              <td>{prem_cell}</td>
+              <td>{m}</td><td>{std_cell}</td><td>{prem_cell}</td>
               <td><strong>{total_m}</strong></td>
-              <td>{target_str}</td>
-              <td class="{rate_td_cls}"><strong>{rate_str}</strong></td>
+              <td>{target_m if target_m > 0 else "-"}</td>
+              <td class="{rate_color(rate_m)}"><strong>{f"{rate_m}%" if rate_m is not None else "-"}</strong></td>
             </tr>"""
             prev_std, prev_prem = std_cnt, prem_cnt
 
         st.markdown(thead + tbody + "</tbody></table>", unsafe_allow_html=True)
 
-        st.divider()
+        st.markdown('<hr class="divider-soft">', unsafe_allow_html=True)
 
-        # ── 📊 분기별 실적 테이블 ────────────────────────────
+        # ────────────────────────────────────────────────
+        # 📊 분기별 실적
+        # ────────────────────────────────────────────────
         st.markdown('<div class="section-title">📊 분기별 실적</div>', unsafe_allow_html=True)
 
         q_order = ["1분기","2분기","3분기","4분기"]
-        q_thead = """
-        <table class="report-table">
-        <thead><tr>
-          <th>분기</th>
-          <th>위멤버스 스탠다드</th>
-          <th>위멤버스 프리미엄</th>
-          <th>목표</th>
-          <th>실적합계</th>
-          <th>달성률</th>
-        </tr></thead><tbody>
-        """
+        q_thead = """<table class="report-table"><thead><tr>
+          <th>분기</th><th>위멤버스 스탠다드</th><th>위멤버스 프리미엄</th>
+          <th>목표</th><th>실적합계</th><th>달성률</th>
+        </tr></thead><tbody>"""
         q_tbody = ""
         for qi, q in enumerate(q_order, 1):
             months_in_q = [m for m in range(1,13) if QUARTERS[m] == q]
-            df_q      = df_year[df_year["월"].isin(months_in_q)]
-            if df_q.empty:
-                continue
+            df_q     = df_year[df_year["월"].isin(months_in_q)]
+            if df_q.empty: continue
             std_q    = int((df_q["상품명"] == "위멤버스 스탠다드").sum())
             prem_q   = int((df_q["상품명"] == "위멤버스 프리미엄").sum())
             total_q  = std_q + prem_q
             target_q = sum(get_target(sel_year, m) for m in months_in_q)
             rate_q   = round(total_q / target_q * 100, 1) if target_q > 0 else None
-            rate_str = f"{rate_q}%" if rate_q is not None else "-"
-            rate_cls = rate_color(rate_q)
-            target_str = str(target_q) if target_q > 0 else "-"
-
             q_tbody += f"""<tr>
-              <td>{qi}</td>
-              <td>{std_q}</td>
-              <td>{prem_q}</td>
-              <td>{target_str}</td>
+              <td>{qi}</td><td>{std_q}</td><td>{prem_q}</td>
+              <td>{target_q if target_q > 0 else "-"}</td>
               <td><strong>{total_q}</strong></td>
-              <td class="{rate_cls}"><strong>{rate_str}</strong></td>
+              <td class="{rate_color(rate_q)}"><strong>{f"{rate_q}%" if rate_q is not None else "-"}</strong></td>
             </tr>"""
 
         st.markdown(q_thead + q_tbody + "</tbody></table>", unsafe_allow_html=True)
 
-        st.divider()
+        st.markdown('<hr class="divider-soft">', unsafe_allow_html=True)
 
-        # ── 📈 월별 추이 차트 ────────────────────────────────
+        # ────────────────────────────────────────────────
+        # 📆 주간 실적
+        # ────────────────────────────────────────────────
+        st.markdown('<div class="section-title">📆 주간 실적</div>', unsafe_allow_html=True)
+
+        today    = date.today()
+        thu, wed = get_week_range(today)
+        st.markdown(
+            f'<div class="week-badge">📌 현재 보고 기준 주간: '
+            f'{thu.strftime("%Y.%m.%d")} (목) ~ {wed.strftime("%Y.%m.%d")} (수)</div>',
+            unsafe_allow_html=True,
+        )
+
+        last_thu = thu - timedelta(weeks=1)
+        last_wed = wed - timedelta(weeks=1)
+        df_this  = df_year[(df_year["가입일"] >= thu)      & (df_year["가입일"] <= wed)]
+        df_last  = df_year[(df_year["가입일"] >= last_thu) & (df_year["가입일"] <= last_wed)]
+        diff     = len(df_this) - len(df_last)
+        diff_cls = "text-good" if diff >= 0 else "text-bad"
+        diff_str = f"+{diff}" if diff >= 0 else str(diff)
+
+        w1, w2, w3 = st.columns(3)
+        with w1:
+            st.markdown(f"""<div class="annual-kpi">
+              <div class="label">이번 주 신규</div>
+              <div class="value">{len(df_this)}건</div>
+              <div style="color:#94a3b8;font-size:0.76rem;margin-top:0.2rem">
+                {thu.strftime('%m.%d')} ~ {wed.strftime('%m.%d')}</div>
+            </div>""", unsafe_allow_html=True)
+        with w2:
+            st.markdown(f"""<div class="annual-kpi">
+              <div class="label">지난 주 신규</div>
+              <div class="value">{len(df_last)}건</div>
+              <div style="color:#94a3b8;font-size:0.76rem;margin-top:0.2rem">
+                {last_thu.strftime('%m.%d')} ~ {last_wed.strftime('%m.%d')}</div>
+            </div>""", unsafe_allow_html=True)
+        with w3:
+            st.markdown(f"""<div class="annual-kpi">
+              <div class="label">전주 대비</div>
+              <div class="value {diff_cls}">{diff_str}건</div>
+            </div>""", unsafe_allow_html=True)
+
+        st.markdown("")
+
+        if not df_this.empty:
+            prod_cnt = df_this.groupby("상품명").size().reset_index(name="건수")
+            w_thead  = """<table class="report-table">
+              <thead><tr><th>상품명</th><th>건수</th></tr></thead><tbody>"""
+            w_tbody  = "".join(
+                f"<tr><td>{r['상품명']}</td><td>{r['건수']}</td></tr>"
+                for _, r in prod_cnt.iterrows()
+            )
+            w_tbody += f"<tr><td><strong>합계</strong></td><td><strong>{len(df_this)}</strong></td></tr>"
+            st.markdown(w_thead + w_tbody + "</tbody></table>", unsafe_allow_html=True)
+            st.markdown("")
+            with st.expander("📋 이번 주 신규 고객 목록"):
+                st.dataframe(
+                    df_this[["상호명","상품명","가입일"]].reset_index(drop=True),
+                    use_container_width=True,
+                )
+        else:
+            st.info("이번 주 신규 데이터가 없습니다.")
+
+        st.markdown('<hr class="divider-soft">', unsafe_allow_html=True)
+
+        # ────────────────────────────────────────────────
+        # 📈 월별 추이 차트
+        # ────────────────────────────────────────────────
         st.markdown('<div class="section-title">📈 월별 신규 추이</div>', unsafe_allow_html=True)
         base = pd.DataFrame({"월": range(1,13)})
         base["월명"] = base["월"].map(MONTH_NAMES)
@@ -487,84 +525,13 @@ with TAB_REPORT:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-
-# ══════════════════════════════════════════════════════════
-# 탭 3 — 주간 실적
-# ══════════════════════════════════════════════════════════
-with TAB_WEEKLY:
-    df_wm, available_years = load_report_data()
-    if df_wm is not None:
-        c_yr, _ = st.columns([2, 8])
-        with c_yr:
-            sel_year = st.selectbox("연도", available_years, key="yr_weekly")
-
-        today    = date.today()
-        thu, wed = get_week_range(today)
-        df_year  = df_wm[df_wm["연도"] == sel_year]
-
-        st.markdown(
-            f'<div class="week-badge">📌 현재 보고 기준 주간: '
-            f'{thu.strftime("%Y.%m.%d")} (목) ~ {wed.strftime("%Y.%m.%d")} (수)</div>',
-            unsafe_allow_html=True,
-        )
-
-        last_thu = thu - timedelta(weeks=1)
-        last_wed = wed - timedelta(weeks=1)
-        df_this  = df_year[(df_year["가입일"] >= thu)      & (df_year["가입일"] <= wed)]
-        df_last  = df_year[(df_year["가입일"] >= last_thu) & (df_year["가입일"] <= last_wed)]
-        diff     = len(df_this) - len(df_last)
-        diff_cls = "text-good" if diff >= 0 else "text-bad"
-        diff_str = f"+{diff}" if diff >= 0 else str(diff)
-
-        k1, k2, k3 = st.columns(3)
-        with k1:
-            st.markdown(f"""<div class="annual-kpi">
-              <div class="label">이번 주 신규</div>
-              <div class="value">{len(df_this)}건</div>
-              <div style="color:#94a3b8;font-size:0.76rem">{thu.strftime('%m.%d')} ~ {wed.strftime('%m.%d')}</div>
-            </div>""", unsafe_allow_html=True)
-        with k2:
-            st.markdown(f"""<div class="annual-kpi">
-              <div class="label">지난 주 신규</div>
-              <div class="value">{len(df_last)}건</div>
-              <div style="color:#94a3b8;font-size:0.76rem">{last_thu.strftime('%m.%d')} ~ {last_wed.strftime('%m.%d')}</div>
-            </div>""", unsafe_allow_html=True)
-        with k3:
-            st.markdown(f"""<div class="annual-kpi">
-              <div class="label">전주 대비</div>
-              <div class="value {diff_cls}">{diff_str}건</div>
-            </div>""", unsafe_allow_html=True)
-
-        st.markdown("")
-
-        # 이번 주 주차별 상품 테이블
-        st.markdown('<div class="section-title">📆 이번 주 상품별 현황</div>', unsafe_allow_html=True)
-        if not df_this.empty:
-            prod_cnt = df_this.groupby("상품명").size().reset_index(name="건수")
-            w_thead  = """<table class="report-table">
-            <thead><tr><th>상품명</th><th>건수</th></tr></thead><tbody>"""
-            w_tbody  = ""
-            for _, r in prod_cnt.iterrows():
-                w_tbody += f"<tr><td>{r['상품명']}</td><td>{r['건수']}</td></tr>"
-            w_tbody += f"<tr><td><strong>합계</strong></td><td><strong>{len(df_this)}</strong></td></tr>"
-            st.markdown(w_thead + w_tbody + "</tbody></table>", unsafe_allow_html=True)
-
-            st.markdown("")
-            with st.expander("📋 이번 주 신규 고객 목록"):
-                st.dataframe(
-                    df_this[["상호명","상품명","가입일"]].reset_index(drop=True),
-                    use_container_width=True,
-                )
-        else:
-            st.info("이번 주 신규 데이터가 없습니다.")
-
         # 최근 8주 트렌드
         st.markdown('<div class="section-title">📈 최근 8주 트렌드</div>', unsafe_allow_html=True)
         week_rows = []
         for i in range(7, -1, -1):
             w_thu = thu - timedelta(weeks=i)
             w_wed = wed - timedelta(weeks=i)
-            cnt   = len(df_year[(df_year["가입일"] >= w_thu) & (df_year["가입일"] <= w_wed)])
+            cnt   = len(df_wm[(df_wm["가입일"] >= w_thu) & (df_wm["가입일"] <= w_wed)])
             week_rows.append({
                 "주간": f"{w_thu.strftime('%m.%d')}~{w_wed.strftime('%m.%d')}",
                 "건수": cnt,
@@ -574,59 +541,76 @@ with TAB_WEEKLY:
                         color_discrete_sequence=["#0066FF"], height=260)
         fig2.update_traces(line_width=2.5, marker_size=8)
         fig2.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                           font_family="Noto Sans KR", margin=dict(t=10,b=10))
+                           font_family="Noto Sans KR", margin=dict(t=10, b=10))
         st.plotly_chart(fig2, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════
-# 탭 4 — 목표 관리
+# 탭 3 — 목표 관리
 # ══════════════════════════════════════════════════════════
 with TAB_TARGET:
-    df_wm, available_years = load_report_data()
-    if df_wm is not None:
-        sel_year = st.selectbox("연도", available_years, key="yr_target")
-        st.subheader(f"🎯 {sel_year}년 월별 목표 설정")
-        st.caption("목표를 입력하고 저장하면 보고서의 달성률에 즉시 반영됩니다.")
+    st.subheader("🎯 월별 목표 설정")
+    st.caption("연도를 선택하고 월별 목표를 입력하세요. 2026년 이후 미래 연도도 미리 설정할 수 있습니다.")
 
-        with st.form("target_form"):
-            rows_of_cols = [st.columns(4) for _ in range(3)]
-            new_targets  = {}
-            for i, month in enumerate(range(1, 13)):
-                with rows_of_cols[i // 4][i % 4]:
-                    new_targets[month] = st.number_input(
-                        MONTH_NAMES[month], min_value=0, max_value=9999,
-                        value=get_target(sel_year, month), step=1,
-                        key=f"tgt_{sel_year}_{month}",
-                    )
-            if st.form_submit_button("💾 목표 저장", use_container_width=True):
-                for m, v in new_targets.items():
-                    save_target(sel_year, m, int(v))
-                st.success("✅ 목표가 저장되었습니다!")
-                st.rerun()
+    # 연도 선택: 데이터 연도와 무관하게 TARGET_YEARS 전체 표시
+    target_year_options = TARGET_YEARS
+    default_idx = target_year_options.index(CURRENT_YEAR) if CURRENT_YEAR in target_year_options else 0
+    sel_target_year = st.selectbox(
+        "연도 선택",
+        target_year_options,
+        index=default_idx,
+        format_func=lambda y: f"{y}년" + (" (올해)" if y == CURRENT_YEAR else
+                                           " (내년)" if y == CURRENT_YEAR + 1 else ""),
+        key="yr_target",
+    )
 
-        st.divider()
+    st.markdown(f"**{sel_target_year}년** 월별 목표를 입력하세요.")
 
-        # 목표 vs 실적 요약 테이블
-        st.markdown('<div class="section-title">📋 현재 목표 vs 실적</div>', unsafe_allow_html=True)
-        df_year = df_wm[df_wm["연도"] == sel_year]
+    with st.form("target_form"):
+        rows_of_cols = [st.columns(4) for _ in range(3)]
+        new_targets  = {}
+        for i, month in enumerate(range(1, 13)):
+            with rows_of_cols[i // 4][i % 4]:
+                new_targets[month] = st.number_input(
+                    MONTH_NAMES[month], min_value=0, max_value=9999,
+                    value=get_target(sel_target_year, month), step=1,
+                    key=f"tgt_{sel_target_year}_{month}",
+                )
+        if st.form_submit_button("💾 목표 저장", use_container_width=True):
+            for m, v in new_targets.items():
+                save_target(sel_target_year, m, int(v))
+            st.success(f"✅ {sel_target_year}년 목표가 저장되었습니다!")
+            st.rerun()
 
-        t_thead = """<table class="report-table">
-        <thead><tr>
-          <th>월</th><th>목표</th><th>실적</th><th>달성률</th>
-        </tr></thead><tbody>"""
-        t_tbody = ""
-        for m in range(1, 13):
-            t = get_target(sel_year, m)
-            a = len(df_year[df_year["월"] == m])
-            r = round(a/t*100, 1) if t > 0 else None
-            r_str = f"{r}%" if r is not None else "-"
-            r_cls = rate_color(r)
-            t_tbody += f"""<tr>
-              <td>{MONTH_NAMES[m]}</td>
-              <td>{t if t > 0 else "-"}</td>
-              <td>{a}</td>
-              <td class="{r_cls}"><strong>{r_str}</strong></td>
-            </tr>"""
-        st.markdown(t_thead + t_tbody + "</tbody></table>", unsafe_allow_html=True)
-        st.markdown("")
-        st.info("💡 목표는 브라우저 세션 동안 유지됩니다. 새로고침 시 초기화됩니다.")
+    st.divider()
+
+    # 목표 vs 실적 요약 테이블
+    st.markdown('<div class="section-title">📋 목표 vs 실적 요약</div>', unsafe_allow_html=True)
+
+    # 실적 데이터 로드 (없어도 목표 테이블은 표시)
+    try:
+        df_all = load_wemembers()
+        df_target_year = df_all[
+            (df_all["상품명"].isin(WM_PRODUCTS)) & (df_all["연도"] == sel_target_year)
+        ] if not df_all.empty else pd.DataFrame()
+    except:
+        df_target_year = pd.DataFrame()
+
+    t_thead = """<table class="report-table"><thead><tr>
+      <th>월</th><th>목표</th><th>실적</th><th>달성률</th>
+    </tr></thead><tbody>"""
+    t_tbody = ""
+    for m in range(1, 13):
+        t = get_target(sel_target_year, m)
+        a = len(df_target_year[df_target_year["월"] == m]) if not df_target_year.empty else 0
+        r = round(a/t*100, 1) if t > 0 else None
+        t_tbody += f"""<tr>
+          <td>{MONTH_NAMES[m]}</td>
+          <td>{t if t > 0 else "-"}</td>
+          <td>{a}</td>
+          <td class="{rate_color(r)}"><strong>{f"{r}%" if r is not None else "-"}</strong></td>
+        </tr>"""
+
+    st.markdown(t_thead + t_tbody + "</tbody></table>", unsafe_allow_html=True)
+    st.markdown("")
+    st.info("💡 목표는 브라우저 세션 동안 유지됩니다. 새로고침 시 초기화됩니다.")
