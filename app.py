@@ -215,12 +215,6 @@ def rate_color(rate):
     return "text-warn"
 
 
-def make_badge(v, d):
-    if d > 0: return f'{v} <span class="badge-up">(▲{d})</span>'
-    if d < 0: return f'{v} <span class="badge-down">(▼{abs(d)})</span>'
-    return str(v)
-
-
 # ══════════════════════════════════════════════════════════
 # 헤더
 # ══════════════════════════════════════════════════════════
@@ -368,28 +362,19 @@ with TAB_REPORT:
           <th>실적합계</th><th>목표</th><th>달성률</th>
         </tr></thead><tbody>"""
         tbody = ""
-        prev_std, prev_prem = None, None
         for m in active_months:
             std_cnt  = int(std_monthly.get(m, 0))
             prem_cnt = int(prem_monthly.get(m, 0))
             total_m  = std_cnt + prem_cnt
             target_m = get_target(sel_year, m)
             rate_m   = round(total_m / target_m * 100, 1) if target_m > 0 else None
-            is_latest = (m == max(active_months))
-
-            if is_latest and prev_std is not None:
-                std_cell  = make_badge(std_cnt,  std_cnt  - prev_std)
-                prem_cell = make_badge(prem_cnt, prem_cnt - prev_prem)
-            else:
-                std_cell, prem_cell = str(std_cnt), str(prem_cnt)
 
             tbody += f"""<tr>
-              <td>{m}</td><td>{std_cell}</td><td>{prem_cell}</td>
+              <td>{m}</td><td>{std_cnt}</td><td>{prem_cnt}</td>
               <td><strong>{total_m}</strong></td>
               <td>{target_m if target_m > 0 else "-"}</td>
               <td class="{rate_color(rate_m)}"><strong>{f"{rate_m}%" if rate_m is not None else "-"}</strong></td>
             </tr>"""
-            prev_std, prev_prem = std_cnt, prem_cnt
 
         st.markdown(thead + tbody + "</tbody></table>", unsafe_allow_html=True)
 
