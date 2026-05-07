@@ -162,16 +162,24 @@ def upload_to_sheet(sheet_name: str, df: pd.DataFrame, col_indices: list) -> int
         all_vals = [header] + new_data if header else new_data
         if all_vals:
             ws.update("A1", all_vals, value_input_option="USER_ENTERED")
-    else:
-        # 기존 데이터가 있으면 마지막 행 다음에 추가
-        # 중복 제거: 기존 데이터의 1열(사업자번호) 기준으로 이미 있는 행 스킵
-        existing_keys = set(row[0] for row in existing[1:] if row)  # 헤더 제외
-        deduped = [row for row in new_data if row and str(row[0]) not in existing_keys]
-        if deduped:
-            ws.append_rows(deduped, value_input_option="USER_ENTERED")
-        return len(deduped)
+        return len(new_data)
 
-    return len(new_data)
+    # 기존 데이터가 있으면 중복 제거 후 추가
+    # 1열(사업자번호) 기준으로 이미 있는 행 스킵
+    existing_keys = set(row[0].strip() for row in existing[1:] if row and row[0].strip())
+    deduped = [row for row in new_data if row and str(row[0]).strip() not in existing_keys]
+
+    if deduped:
+        # 마지막 행 번호 계산 후 직접 범위 지정해서 update (append_rows 500 에러 방지)
+        next_row = len(existing) + 1
+        end_row  = next_row + len(deduped) - 1
+        end_col  = len(deduped[0]) if deduped else 1
+        # 열 문자 변환 (1=A, 2=B, ...)
+        col_letter = chr(ord('A') + end_col - 1)
+        cell_range = f"A{next_row}:{col_letter}{end_row}"
+        ws.update(cell_range, deduped, value_input_option="USER_ENTERED")
+
+    return len(deduped)
 
 
 # ══════════════════════════════════════════════════════════
