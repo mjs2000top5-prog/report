@@ -207,14 +207,62 @@ def get_week_range(ref: date):
     return thu, thu + timedelta(days=6)
 
 
+# ── 목표 로드 (Google Sheets 목표 시트, 캐시 30초) ──────────
+@st.cache_data(ttl=30)
+def load_all_targets() -> dict:
+    """목표 시트에서 {종류_연도_월: 값} dict 반환. 시트 없으면 빈 dict."""
+    try:
+        ws  = get_worksheet("목표")
+        rows = ws.get_all_values()
+        result = {}
+        for r in rows[1:]:          # 헤더(종류,연도,월,목표) 스킵
+            if len(r) >= 4:
+                try:
+                    result[f"{r[0]}_{r[1]}_{r[2]}"] = int(r[3])
+                except (ValueError, IndexError):
+                    pass
+        return result
+    except Exception:
+        return {}
+
+
 def get_target(year: int, month: int) -> int:
-    return st.session_state.get("monthly_targets", {}).get(f"{year}_{month}", 0)
+    targets = load_all_targets()
+    return targets.get(f"위멤버스_{year}_{month}", 0)
 
 
-def save_target(year: int, month: int, val: int):
-    if "monthly_targets" not in st.session_state:
-        st.session_state["monthly_targets"] = {}
-    st.session_state["monthly_targets"][f"{year}_{month}"] = val
+def get_target2(year: int, month: int) -> int:
+    targets = load_all_targets()
+    return targets.get(f"경리나라_{year}_{month}", 0)
+
+
+def save_targets_to_sheet(kind: str, year: int, monthly_vals: dict):
+    """목표 시트에 kind(위멤버스|경리나라) + year의 12개월 목표를 upsert."""
+    try:
+        ws = get_worksheet("목표")
+    except Exception:
+        # 시트가 없으면 생성
+        sh = get_client().open_by_key(SPREADSHEET_ID)
+        ws = sh.add_worksheet(title="목표", rows=500, cols=4)
+        ws.update("A1:D1", [["종류", "연도", "월", "목표"]])
+
+    existing = ws.get_all_values()
+    # 행 인덱스 맵 {(종류,연도,월): row_number(1-based)}
+    row_map = {}
+    for i, r in enumerate(existing[1:], start=2):
+        if len(r) >= 3:
+            row_map[(r[0], str(r[1]), str(r[2]))] = i
+
+    for month, val in monthly_vals.items():
+        key = (kind, str(year), str(month))
+        if key in row_map:
+            # 기존 행 업데이트
+            ws.update_cell(row_map[key], 4, int(val))
+        else:
+            # 신규 행 추가
+            ws.append_row([kind, year, month, int(val)], value_input_option="USER_ENTERED")
+
+    load_all_targets.clear()   # 캐시 초기화
 
 
 def load_report_data():
@@ -269,14 +317,7 @@ def load_gyeongri() -> pd.DataFrame:
     return df
 
 
-def get_target2(year: int, month: int) -> int:
-    return st.session_state.get("monthly_targets2", {}).get(f"{year}_{month}", 0)
 
-
-def save_target2(year: int, month: int, val: int):
-    if "monthly_targets2" not in st.session_state:
-        st.session_state["monthly_targets2"] = {}
-    st.session_state["monthly_targets2"][f"{year}_{month}"] = val
 
 
 def rate_color(rate):
@@ -835,10 +876,12 @@ with TAB_TARGET:
                     key=f"tgt_wm_{sel_target_year}_{month}",
                 )
         if st.form_submit_button("💾 위멤버스 목표 저장", use_container_width=True):
-            for m, v in new_tgt_wm.items():
-                save_target(sel_target_year, m, int(v))
-            st.success(f"✅ {sel_target_year}년 위멤버스 목표가 저장되었습니다!")
-            st.rerun()
+            try:
+                save_targets_to_sheet("위멤버스", sel_target_year, new_tgt_wm)
+                st.success(f"✅ {sel_target_year}년 위멤버스 목표가 저장되었습니다!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"저장 실패: {e}")
 
     # 위멤버스 목표 vs 실적
     try:
@@ -880,10 +923,12 @@ with TAB_TARGET:
                     key=f"tgt_gr_{sel_target_year}_{month}",
                 )
         if st.form_submit_button("💾 경리나라 목표 저장", use_container_width=True):
-            for m, v in new_tgt_gr.items():
-                save_target2(sel_target_year, m, int(v))
-            st.success(f"✅ {sel_target_year}년 경리나라 목표가 저장되었습니다!")
-            st.rerun()
+            try:
+                save_targets_to_sheet("경리나라", sel_target_year, new_tgt_gr)
+                st.success(f"✅ {sel_target_year}년 경리나라 목표가 저장되었습니다!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"저장 실패: {e}")
 
     # 경리나라 목표 vs 실적
     try:
@@ -908,4 +953,4 @@ with TAB_TARGET:
         </tr>"""
     st.markdown(gr_thead + gr_tbody + "</tbody></table>", unsafe_allow_html=True)
     st.markdown("")
-    st.info("💡 목표는 브라우저 세션 동안 유지됩니다. 새로고침 시 초기화됩니다.")
+    st.info("💡 목표는 Google Sheets 목표 시트에 영구 저장됩니다. 앱을 새로고침해도 유지됩니다.")
