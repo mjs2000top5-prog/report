@@ -151,13 +151,27 @@ def df_to_sheet_values(df: pd.DataFrame) -> list:
 def upload_to_sheet(sheet_name: str, df: pd.DataFrame, col_indices: list) -> int:
     ws        = get_worksheet(sheet_name)
     extracted = extract_columns(df, col_indices)
-    header    = extracted.iloc[0].tolist() if len(extracted) > 0 else []
-    data      = df_to_sheet_values(extracted.iloc[1:])
-    ws.clear()
-    all_vals  = [header] + data if header else data
-    if all_vals:
-        ws.update("A1", all_vals, value_input_option="USER_ENTERED")
-    return len(data)
+    new_data  = df_to_sheet_values(extracted.iloc[1:])  # 헤더 제외 신규 데이터
+
+    # 기존 데이터 확인
+    existing = ws.get_all_values()
+
+    if not existing:
+        # 시트가 비어있으면 헤더 포함해서 전체 쓰기
+        header   = extracted.iloc[0].tolist() if len(extracted) > 0 else []
+        all_vals = [header] + new_data if header else new_data
+        if all_vals:
+            ws.update("A1", all_vals, value_input_option="USER_ENTERED")
+    else:
+        # 기존 데이터가 있으면 마지막 행 다음에 추가
+        # 중복 제거: 기존 데이터의 1열(사업자번호) 기준으로 이미 있는 행 스킵
+        existing_keys = set(row[0] for row in existing[1:] if row)  # 헤더 제외
+        deduped = [row for row in new_data if row and str(row[0]) not in existing_keys]
+        if deduped:
+            ws.append_rows(deduped, value_input_option="USER_ENTERED")
+        return len(deduped)
+
+    return len(new_data)
 
 
 # ══════════════════════════════════════════════════════════
@@ -292,7 +306,10 @@ with TAB_UPLOAD:
                     st.markdown('<div class="success-box">', unsafe_allow_html=True)
                     st.markdown("### ✅ 업로드 완료!")
                     for sname, cnt in results.items():
-                        st.markdown(f"- **{SHEET_CONFIG[sname]['icon']} {sname}**: {cnt:,}건")
+                        if cnt > 0:
+                            st.markdown(f"- **{SHEET_CONFIG[sname]['icon']} {sname}**: {cnt:,}건 추가")
+                        else:
+                            st.markdown(f"- **{SHEET_CONFIG[sname]['icon']} {sname}**: 신규 데이터 없음 (모두 중복)")
                     st.markdown(
                         f"[📊 Google Sheets에서 확인하기](https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit)"
                     )
