@@ -151,14 +151,14 @@ def df_to_sheet_values(df: pd.DataFrame) -> list:
 def upload_to_sheet(sheet_name: str, df: pd.DataFrame, col_indices: list) -> int:
     ws        = get_worksheet(sheet_name)
     extracted = extract_columns(df, col_indices)
-    new_data  = df_to_sheet_values(extracted.iloc[1:])  # 헤더 제외 신규 데이터
+    new_data  = df_to_sheet_values(extracted)  # pd.read_excel이 이미 1행을 헤더로 처리했으므로 전체 데이터 사용
 
     # 기존 데이터 확인
     existing = ws.get_all_values()
 
     if not existing:
         # 시트가 비어있으면 헤더 포함해서 전체 쓰기
-        header   = extracted.iloc[0].tolist() if len(extracted) > 0 else []
+        header   = extracted.columns.tolist()  # pd.read_excel의 컬럼명을 헤더로 사용
         all_vals = [header] + new_data if header else new_data
         if all_vals:
             ws.update("A1", all_vals, value_input_option="USER_ENTERED")
