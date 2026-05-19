@@ -165,9 +165,15 @@ def upload_to_sheet(sheet_name: str, df: pd.DataFrame, col_indices: list) -> int
         return len(new_data)
 
     # 기존 데이터가 있으면 중복 제거 후 추가
-    # 1열(사업자번호) 기준으로 이미 있는 행 스킵
-    existing_keys = set(row[0].strip() for row in existing[1:] if row and row[0].strip())
-    deduped = [row for row in new_data if row and str(row[0]).strip() not in existing_keys]
+    # 사업자번호 + 가입일 조합 기준으로 이미 있는 행 스킵
+    existing_keys = set(
+        (row[0].strip(), row[3].strip() if len(row) > 3 else "")
+        for row in existing[1:] if row and row[0].strip()
+    )
+    deduped = [
+        row for row in new_data
+        if row and (str(row[0]).strip(), str(row[3]).strip() if len(row) > 3 else "") not in existing_keys
+    ]
 
     if deduped:
         # 마지막 행 번호 계산 후 직접 범위 지정해서 update (append_rows 500 에러 방지)
